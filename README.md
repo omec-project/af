@@ -3,6 +3,8 @@ Copyright (C) 2026 Intel Corporation
 
 SPDX-License-Identifier: Apache-2.0
 -->
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/omec-project/af/badge)](https://scorecard.dev/viewer/?uri=github.com/omec-project/af)
+[![GitHub latest release (SemVer)](https://img.shields.io/github/v/release/omec-project/af?sort=semver)](https://github.com/omec-project/af/releases)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://spdx.org/licenses/Apache-2.0.html)
 
 # Application Functions (AF)
