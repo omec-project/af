@@ -38,9 +38,9 @@ RUN if [ "$DEBUG_TOOLS" = "true" ]; then \
     fi
 
 # Run as an unprivileged user
-RUN addgroup -S aether && adduser -S -G aether aether
+RUN addgroup -S -g 10001 aether && adduser -S -u 10001 -G aether aether
 
 # Copy executable
 COPY --from=builder /go/src/af/bin/* /usr/local/bin/.
 
-USER aether
+USER 10001:10001
