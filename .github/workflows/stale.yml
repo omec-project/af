@@ -1,0 +1,21 @@
+# Copyright (C) 2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+on:
+  schedule:
+    - cron: "0 0 * * *"
+permissions:
+  issues: write
+  pull-requests: write
+  contents: read
+jobs:
+  stale:
+    permissions:
+      issues: write
+      pull-requests: write
+      contents: read
+      actions: read
+    uses: omec-project/.github/.github/workflows/stale-issue.yml@2153cd76b687692e40505877e442d10b6cd3e0ff # v0.1.1
+    with:
+      days_before_stale: 120
+      days_before_close: 15
+    secrets: inherit
