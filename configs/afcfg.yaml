@@ -1,0 +1,49 @@
+# Copyright (C) 2026 Intel Corporation
+#
+# SPDX-License-Identifier: Apache-2.0
+info:
+  version: 1.0.0
+  description: AF initial local configuration
+logger:
+  level: info # panic|fatal|error|warn|info|debug
+configuration:
+  afName: AF
+  nrfUri: http://nrf:8000 # NRF the AF registers at and discovers the PCF from
+  # pcfUri: http://pcf:8000 # optional; when set the PCF is not discovered through the NRF
+  sbi: # receives the notifications of the PCF
+    scheme: http # http|https
+    registerIPv4: af # address registered at the NRF and given to the PCF in notifUri
+    bindingIPv4: 0.0.0.0
+    port: 8000
+    # tls:
+    #   pem: /etc/af/tls/af.pem
+    #   key: /etc/af/tls/af.key
+  northbound: # receives the QoS requests of the IMS (P-CSCF): POST /api/nf/{createPDUAudio,createPDUVideo,patchPDU,deletePDU}
+    bindingIPv4: 0.0.0.0
+    port: 7782
+    # authTokenFile: /etc/af/northbound-token # optional; when set, requests need "Authorization: Bearer <content of the file>"
+  metrics: # scraped by Prometheus: GET /metrics
+    bindingIPv4: 0.0.0.0
+    port: 8080
+  media: # content of the app sessions sent to the PCF
+    dnn: ims
+    afAppId: '+g.3gpp.icsi-ref="urn%3Aurn-7%3A3gpp-service.ims.icsi.mmtel"'
+    suppFeat: "14034" # MediaComponentVersioning, IMS_SBI, NetLoc, EnhancedSubscriptionToNotification, AuthorizationWithRequiredQoS
+    audio:
+      qosReference: qosVoNR
+      marBwDl: 128 Kbps
+      marBwUl: 128 Kbps
+      rtcpMarBwDl: 128 Kbps
+      rtcpMarBwUl: 128 Kbps
+    video:
+      qosReference: qosViNR
+      marBwDl: 2048 Kbps
+      marBwUl: 2048 Kbps
+      rtcpMarBwDl: 128 Kbps
+      rtcpMarBwUl: 128 Kbps
+    events: # AF events subscribed in the app sessions
+      - event: QOS_NOTIF
+        notifMethod: PERIODIC
+        repPeriod: 60 # seconds; required for PERIODIC
+      - event: ANI_REPORT
+        notifMethod: ONE_TIME

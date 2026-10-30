@@ -1,0 +1,27 @@
+# Copyright (C) 2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
+
+# Toolchain
+# Goland project folder
+.idea/
+# Visual Studio Code
+.vscode/
+# emacs/vim
+GPATH
+GRTAGS
+GTAGS
+TAGS
+tags
+cscope.*
+# mac
+.DS_Store
+
+# debug
+*.log
+*.pcap
+vendor*
+*.patch
+
+# coverage
+./.coverage

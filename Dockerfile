@@ -1,0 +1,46 @@
+# Copyright (C) 2026 Intel Corporation
+#
+# SPDX-License-Identifier: Apache-2.0
+#
+
+FROM golang:1.27.3-bookworm@sha256:972b4110ba0f47539a975c31e52c64765e1ff19f2d74469ae4a595c6676e80a5 AS builder
+
+WORKDIR $GOPATH/src/af
+COPY . .
+ARG MAKEFLAGS
+RUN make all
+
+FROM alpine:3.24@sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cabeaec77e6 AS af
+
+# Build arguments for dynamic labels
+ARG VERSION=dev
+ARG VCS_URL=unknown
+ARG VCS_REF=unknown
+ARG BUILD_DATE=unknown
+
+LABEL org.opencontainers.image.source="${VCS_URL}" \
+    org.opencontainers.image.version="${VERSION}" \
+    org.opencontainers.image.created="${BUILD_DATE}" \
+    org.opencontainers.image.revision="${VCS_REF}" \
+    org.opencontainers.image.url="${VCS_URL}" \
+    org.opencontainers.image.title="af" \
+    org.opencontainers.image.description="Aether 5G Core Application Function (AF)" \
+    org.opencontainers.image.authors="Aether SD-Core <dev@lists.aetherproject.org>" \
+    org.opencontainers.image.vendor="Aether Project" \
+    org.opencontainers.image.licenses="Apache-2.0" \
+    org.opencontainers.image.documentation="https://docs.sd-core.aetherproject.org/"
+
+ARG DEBUG_TOOLS
+
+# Install debug tools only when explicitly requested.
+RUN if [ "$DEBUG_TOOLS" = "true" ]; then \
+        apk add --no-cache vim nano strace net-tools curl netcat-openbsd bind-tools; \
+    fi
+
+# Run as an unprivileged user
+RUN addgroup -S aether && adduser -S -G aether aether
+
+# Copy executable
+COPY --from=builder /go/src/af/bin/* /usr/local/bin/.
+
+USER aether
