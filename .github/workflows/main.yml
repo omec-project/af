@@ -111,3 +111,14 @@ jobs:
     uses: omec-project/.github/.github/workflows/scorecard-analysis.yml@2153cd76b687692e40505877e442d10b6cd3e0ff # v0.1.1
     with:
       branch_name: ${{ github.ref }}
+  e2e-tests:
+    if: github.event_name == 'pull_request'
+    permissions:
+      contents: read
+      pull-requests: write
+      checks: write
+      id-token: write
+      attestations: write
+    uses: omec-project/.github/.github/workflows/e2e-test.yml@2153cd76b687692e40505877e442d10b6cd3e0ff # v0.1.1
+    with:
+      branch_name: ${{ github.ref }}
