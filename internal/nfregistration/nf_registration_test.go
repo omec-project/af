@@ -135,8 +135,15 @@ func TestMetrics_FollowTheRegistrationLifecycle(t *testing.T) {
 	done := make(chan struct{})
 	go func() { defer close(done); StartNfRegistrationService(ctx) }()
 
+	// Wait for what is asserted below, not for the stub's counter: the stub counts a registration before the
+	// wrapper records its metric, and the wrapper records nothing once the context is cancelled.
 	deadline := time.Now().Add(10 * time.Second)
-	for registers.Load() < 2 && time.Now().Before(deadline) { // register, failed heartbeat, register again
+	for time.Now().Before(deadline) { // register, failed heartbeat, register again
+		if metricValue(t, registerOK)-registerBefore >= 2 &&
+			metricValue(t, heartbeatBad)-heartbeatBefore >= 1 &&
+			metricValue(t, "af_nrf_registered") == 1 {
+			break
+		}
 		time.Sleep(20 * time.Millisecond)
 	}
 	cancel()
