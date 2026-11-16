@@ -6,24 +6,16 @@ package consumer
 
 import (
 	"context"
-	"net/http"
-	"strings"
 
 	afContext "github.com/omec-project/af/internal/context"
 	"github.com/omec-project/af/internal/logger"
 	"github.com/omec-project/openapi/v2"
-	"github.com/omec-project/openapi/v2/Nnrf_NFManagement"
 	"github.com/omec-project/openapi/v2/models"
+	"github.com/omec-project/openapi/v2/nrfclient"
 )
 
-func newNfManagementClient(nrfUri string) *Nnrf_NFManagement.APIClient {
-	configuration := Nnrf_NFManagement.NewConfiguration()
-	serverConfig := &configuration.Servers[0]
-	if apiRootVar, exists := serverConfig.Variables["apiRoot"]; exists {
-		apiRootVar.DefaultValue = nrfUri
-		serverConfig.Variables["apiRoot"] = apiRootVar
-	}
-	return Nnrf_NFManagement.NewAPIClient(configuration)
+func newNrfClient(nrfUri string) *nrfclient.Client {
+	return nrfclient.New(nrfUri, nrfclient.WithLogger(logger.ConsumerLog))
 }
 
 // getNfProfile builds the NF profile of the AF. The AF is a pure consumer of
@@ -50,49 +42,26 @@ var SendRegisterNFInstance = func(ctx context.Context) (prof *models.NFProfile, 
 		return models.NewNFProfileWithDefaults(), err
 	}
 
-	client := newNfManagementClient(self.NrfUri)
-	request := client.NFInstanceIDDocumentAPI.RegisterNFInstance(ctx, nfProfile.GetNfInstanceId())
-	request = request.NFProfile(nfProfile)
-	receivedNfProfile, res, err := client.NFInstanceIDDocumentAPI.RegisterNFInstanceExecute(request)
+	result, err := newNrfClient(self.NrfUri).Register(ctx, nfProfile)
 	if err != nil {
 		return models.NewNFProfileWithDefaults(), err
 	}
-	if res == nil {
-		return models.NewNFProfileWithDefaults(), openapi.ReportError("no response from server")
-	}
-
-	switch res.StatusCode {
-	case http.StatusOK: // NFUpdate
-		logger.ConsumerLog.Debugln("AF NF profile updated with complete replacement")
-		return receivedNfProfile, nil
-	case http.StatusCreated: // NFRegister
-		if resourceUri := res.Header.Get("Location"); resourceUri != "" {
-			self.SetNfId(resourceUri[strings.LastIndex(resourceUri, "/")+1:])
-		}
+	if result.Created {
 		logger.ConsumerLog.Debugln("AF NF profile registered to the NRF")
-		return receivedNfProfile, nil
-	default:
-		return receivedNfProfile, openapi.ReportError("NRF returned unexpected status code %d", res.StatusCode)
+		if result.NfInstanceID != "" {
+			self.SetNfId(result.NfInstanceID)
+		}
+	} else {
+		logger.ConsumerLog.Debugln("AF NF profile updated with complete replacement")
 	}
+	return result.Profile, nil
 }
 
 var SendDeregisterNFInstance = func(ctx context.Context) error {
 	logger.ConsumerLog.Infoln("send Deregister NFInstance")
 	self := afContext.AF_Self()
 
-	client := newNfManagementClient(self.NrfUri)
-	request := client.NFInstanceIDDocumentAPI.DeregisterNFInstance(ctx, self.NfId())
-	res, err := client.NFInstanceIDDocumentAPI.DeregisterNFInstanceExecute(request)
-	if err != nil {
-		return err
-	}
-	if res == nil {
-		return openapi.ReportError("no response from server")
-	}
-	if res.StatusCode == http.StatusNoContent {
-		return nil
-	}
-	return openapi.ReportError("unexpected response code %d", res.StatusCode)
+	return newNrfClient(self.NrfUri).Deregister(ctx, self.NfId())
 }
 
 // SendUpdateNFInstance sends the heartbeat. A problem details result means the NRF answered with an error.
@@ -100,21 +69,5 @@ var SendUpdateNFInstance = func(ctx context.Context, patchItem []models.PatchIte
 	logger.ConsumerLog.Debugln("send Update NFInstance")
 	self := afContext.AF_Self()
 
-	client := newNfManagementClient(self.NrfUri)
-	request := client.NFInstanceIDDocumentAPI.UpdateNFInstance(ctx, self.NfId())
-	request = request.PatchItem(patchItem)
-	receivedNfProfile, res, err := client.NFInstanceIDDocumentAPI.UpdateNFInstanceExecute(request)
-	if err != nil {
-		if problem, ok := openapi.ErrorModel[models.ProblemDetails](err); ok {
-			return models.NewNFProfileWithDefaults(), &problem, nil
-		}
-		return models.NewNFProfileWithDefaults(), nil, err
-	}
-	if res == nil {
-		return models.NewNFProfileWithDefaults(), nil, openapi.ReportError("no response from server")
-	}
-	if res.StatusCode == http.StatusOK || res.StatusCode == http.StatusNoContent {
-		return receivedNfProfile, nil, nil
-	}
-	return models.NewNFProfileWithDefaults(), nil, openapi.ReportError("unexpected response code %d", res.StatusCode)
+	return newNrfClient(self.NrfUri).Update(ctx, self.NfId(), patchItem)
 }

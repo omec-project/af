@@ -10,8 +10,8 @@ import (
 
 	afContext "github.com/omec-project/af/internal/context"
 	"github.com/omec-project/af/internal/util"
-	"github.com/omec-project/openapi/v2/Nnrf_NFDiscovery"
 	"github.com/omec-project/openapi/v2/models"
+	"github.com/omec-project/openapi/v2/nrfclient"
 )
 
 // DiscoverPcfUri returns the apiRoot of a PCF that offers Npcf_PolicyAuthorization.
@@ -22,13 +22,7 @@ var DiscoverPcfUri = func(ctx context.Context) (string, error) {
 		return self.PcfUri, nil
 	}
 
-	configuration := Nnrf_NFDiscovery.NewConfiguration()
-	serverConfig := &configuration.Servers[0]
-	if apiRootVar, exists := serverConfig.Variables["apiRoot"]; exists {
-		apiRootVar.DefaultValue = self.NrfUri
-		serverConfig.Variables["apiRoot"] = apiRootVar
-	}
-	client := Nnrf_NFDiscovery.NewAPIClient(configuration)
+	client := nrfclient.NewNFDiscoveryClient(self.NrfUri)
 	request := client.NFInstancesStoreAPI.SearchNFInstances(ctx).
 		TargetNfType(models.NFTYPE_PCF).
 		RequesterNfType(models.NFTYPE_AF).

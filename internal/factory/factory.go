@@ -12,7 +12,7 @@ import (
 
 	"github.com/omec-project/af/internal/logger"
 	"github.com/omec-project/openapi/v2/models"
-	"go.yaml.in/yaml/v4"
+	"github.com/omec-project/util/nfconfig"
 )
 
 const schemeHTTP = "http"
@@ -20,19 +20,15 @@ const schemeHTTP = "http"
 var AfConfig Config
 
 func InitConfigFactory(f string) error {
-	content, err := os.ReadFile(f)
-	if err != nil {
-		return err
-	}
 	var cfg Config
-	if err = yaml.Unmarshal(content, &cfg); err != nil {
+	if err := nfconfig.LoadYAML(f, &cfg); err != nil {
 		return err
 	}
 	if cfg.Configuration == nil {
 		cfg.Configuration = &Configuration{}
 	}
 	cfg.Configuration.applyDefaults()
-	if err = cfg.Configuration.validate(); err != nil {
+	if err := cfg.Configuration.validate(); err != nil {
 		return err
 	}
 	AfConfig = cfg
@@ -40,13 +36,7 @@ func InitConfigFactory(f string) error {
 }
 
 func CheckConfigVersion() error {
-	currentVersion := AfConfig.GetVersion()
-	if currentVersion != AF_EXPECTED_CONFIG_VERSION {
-		return fmt.Errorf("config version is [%s], but expected is [%s]",
-			currentVersion, AF_EXPECTED_CONFIG_VERSION)
-	}
-	logger.CfgLog.Infof("config version [%s]", currentVersion)
-	return nil
+	return nfconfig.CheckVersion(AfConfig.GetVersion(), AF_EXPECTED_CONFIG_VERSION, logger.CfgLog)
 }
 
 func (c *Configuration) applyDefaults() {

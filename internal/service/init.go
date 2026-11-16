@@ -87,16 +87,13 @@ const (
 )
 
 func newServer(addr string, handler http.Handler) (*http.Server, error) {
-	server, err := http2_util.NewServer(addr, os.Getenv("SSLKEYLOGFILE"), handler)
-	if server == nil {
-		return nil, fmt.Errorf("initialize HTTP server failed: %w", err)
+	server, err := http2_util.NewSBIServer(addr, handler, logger.InitLog)
+	if err != nil {
+		return nil, err
 	}
 	server.ReadHeaderTimeout = readHeaderTimeout
 	server.ReadTimeout = readTimeout
 	server.WriteTimeout = writeTimeout
-	if err != nil {
-		logger.InitLog.Warnf("initialize HTTP server: %+v", err)
-	}
 	return server, nil
 }
 
@@ -152,11 +149,7 @@ func (af *AF) Start() error {
 	serverErr := make(chan error, 3)
 	go func() {
 		logger.InitLog.Infof("SBI server listening on %s", sbiServer.Addr)
-		if self.Scheme == "https" {
-			serverErr <- fmt.Errorf("SBI server: %w", sbiServer.ListenAndServeTLS(self.PEM, self.Key))
-		} else {
-			serverErr <- fmt.Errorf("SBI server: %w", sbiServer.ListenAndServe())
-		}
+		serverErr <- fmt.Errorf("SBI server: %w", http2_util.Serve(sbiServer, string(self.Scheme), self.PEM, self.Key, logger.InitLog))
 	}()
 	go func() {
 		logger.InitLog.Infof("northbound server listening on %s", nbServer.Addr)

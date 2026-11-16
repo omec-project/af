@@ -2,123 +2,96 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
+// Package nfregistration adapts the AF to the shared NRF registration service. The AF's registration
+// does not depend on dynamic configuration, so it registers once at startup and stays registered.
 package nfregistration
 
 import (
 	"context"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/omec-project/af/internal/consumer"
 	"github.com/omec-project/af/internal/logger"
 	"github.com/omec-project/af/internal/metrics"
 	"github.com/omec-project/openapi/v2/models"
+	"github.com/omec-project/openapi/v2/nrfregistration"
 )
+
+// retryTime is the interval between failed registration attempts.
+var retryTime = 10 * time.Second
+
+// The AF has no registration config: the service is parameterised with an empty struct.
+type afRegistrationService = nrfregistration.Service[struct{}]
 
 var (
-	retryTime     = 10 * time.Second
-	heartbeatUnit = time.Second
+	serviceMutex sync.Mutex
+	service      *afRegistrationService
 )
 
-const defaultHeartbeatTimer int32 = 60
+// getService returns the service, building it on first use so that retryTime can be set before.
+func getService() *afRegistrationService {
+	serviceMutex.Lock()
+	defer serviceMutex.Unlock()
+	if service == nil {
+		service = newService()
+	}
+	return service
+}
+
+func newService() *afRegistrationService {
+	// The consumer functions are looked up on every call so tests can replace them.
+	svc, err := nrfregistration.New(nrfregistration.Config[struct{}]{
+		NfName:    "AF",
+		Log:       logger.NrfRegistrationLog,
+		RetryTime: retryTime,
+		IsEmpty:   func(struct{}) bool { return false },
+		Register: func(ctx context.Context, _ struct{}) (*models.NFProfile, error) {
+			nfProfile, err := consumer.SendRegisterNFInstance(ctx)
+			if ctx.Err() == nil {
+				metrics.ObserveNrfRequest(metrics.NrfRegister, err)
+			}
+			if err != nil {
+				return nil, err
+			}
+			metrics.SetNrfRegistered(true)
+			return nfProfile, nil
+		},
+		Update: func(ctx context.Context, patch []models.PatchItem) (*models.NFProfile, *models.ProblemDetails, error) {
+			nfProfile, problemDetails, err := consumer.SendUpdateNFInstance(ctx, patch)
+			if ctx.Err() == nil {
+				hbErr := err
+				if problemDetails != nil && hbErr == nil {
+					hbErr = fmt.Errorf("problem details: %+v", problemDetails)
+				}
+				metrics.ObserveNrfRequest(metrics.NrfHeartbeat, hbErr)
+			}
+			if problemDetails != nil || (err != nil && ctx.Err() == nil) {
+				metrics.SetNrfRegistered(false)
+			}
+			return nfProfile, problemDetails, err
+		},
+		Deregister: func(ctx context.Context) error {
+			err := consumer.SendDeregisterNFInstance(ctx)
+			metrics.ObserveNrfRequest(metrics.NrfDeregister, err)
+			metrics.SetNrfRegistered(false)
+			return err
+		},
+	})
+	if err != nil {
+		panic(err) // the config above is static, so this is a programming error
+	}
+	return svc
+}
 
 // StartNfRegistrationService registers the AF at the NRF, retrying until it succeeds, and then keeps the
 // registration alive with heartbeats. If a heartbeat fails the AF registers again. It returns when ctx is done.
 func StartNfRegistrationService(ctx context.Context) {
-	logger.NrfRegistrationLog.Infoln("started NF registration to NRF service")
-	for {
-		heartbeatTimer, ok := register(ctx)
-		if !ok {
-			logger.NrfRegistrationLog.Infoln("NF registration service shutting down")
-			return
-		}
-		if !heartbeatLoop(ctx, heartbeatTimer) {
-			logger.NrfRegistrationLog.Infoln("NF registration service shutting down")
-			return
-		}
-		logger.NrfRegistrationLog.Debugln("NF heartbeat failed. Trying to register again")
-	}
+	getService().StartStatic(ctx, struct{}{})
 }
 
-// register sends RegisterNFInstance until it succeeds. ok is false if ctx was cancelled first.
-func register(ctx context.Context) (heartbeatTimer int32, ok bool) {
-	var interval time.Duration
-	for {
-		select {
-		case <-ctx.Done():
-			return 0, false
-		case <-time.After(interval):
-		}
-		nfProfile, err := consumer.SendRegisterNFInstance(ctx)
-		if ctx.Err() == nil {
-			metrics.ObserveNrfRequest(metrics.NrfRegister, err)
-		}
-		if err != nil {
-			logger.NrfRegistrationLog.Errorf("register AF instance to NRF failed: %v. Will retry in %s", err, retryTime)
-			interval = retryTime
-			continue
-		}
-		logger.NrfRegistrationLog.Infoln("register AF instance to NRF succeeded")
-		metrics.SetNrfRegistered(true)
-		return nfProfile.GetHeartBeatTimer(), true
-	}
-}
-
-// heartbeatLoop sends the heartbeat every heartbeatTimer seconds until one fails (returns true)
-// or ctx is cancelled (returns false).
-func heartbeatLoop(ctx context.Context, heartbeatTimer int32) (failed bool) {
-	if heartbeatTimer <= 0 {
-		heartbeatTimer = defaultHeartbeatTimer
-	}
-	interval := time.Duration(heartbeatTimer) * heartbeatUnit
-	logger.NrfRegistrationLog.Debugf("started heartbeat timer: %d sec", heartbeatTimer)
-	patchItem := []models.PatchItem{{
-		Op:    models.PATCHOPERATION_REPLACE,
-		Path:  "/nfStatus",
-		Value: models.NFSTATUS_REGISTERED,
-	}}
-	for {
-		select {
-		case <-ctx.Done():
-			return false
-		case <-time.After(interval):
-		}
-		nfProfile, problemDetails, err := consumer.SendUpdateNFInstance(ctx, patchItem)
-		if ctx.Err() == nil {
-			hbErr := err
-			if problemDetails != nil && hbErr == nil {
-				hbErr = fmt.Errorf("problem details: %+v", problemDetails)
-			}
-			metrics.ObserveNrfRequest(metrics.NrfHeartbeat, hbErr)
-		}
-		if problemDetails != nil {
-			metrics.SetNrfRegistered(false)
-			logger.NrfRegistrationLog.Warnf("AF update NF instance (heartbeat) problem details: %+v", problemDetails)
-			return true
-		}
-		if err != nil {
-			if ctx.Err() != nil {
-				return false
-			}
-			metrics.SetNrfRegistered(false)
-			logger.NrfRegistrationLog.Warnln("AF update NF instance (heartbeat) error:", err.Error())
-			return true
-		}
-		logger.NrfRegistrationLog.Debugln("AF update NF instance (heartbeat) succeeded")
-		if t := nfProfile.GetHeartBeatTimer(); t > 0 {
-			interval = time.Duration(t) * heartbeatUnit
-		}
-	}
-}
-
-// DeregisterNF removes the AF from the NRF.
+// DeregisterNF stops the heartbeat and removes the AF from the NRF.
 var DeregisterNF = func(ctx context.Context) {
-	err := consumer.SendDeregisterNFInstance(ctx)
-	metrics.ObserveNrfRequest(metrics.NrfDeregister, err)
-	metrics.SetNrfRegistered(false)
-	if err != nil {
-		logger.NrfRegistrationLog.Warnln("deregister instance from NRF error:", err.Error())
-		return
-	}
-	logger.NrfRegistrationLog.Infoln("deregister instance from NRF successful")
+	getService().Deregister(ctx)
 }
