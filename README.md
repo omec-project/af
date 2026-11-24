@@ -85,3 +85,7 @@ stays bounded.
   requires. The PCF in this repository accepts it and, for older consumers, also a bare `AppSessionContextUpdateData`.
 - An update sets the media components in the request and removes the ones of the session that are not in it (`null` in the merge patch).
 - IPv4 UEs only.
+
+## Reach out to us through
+
+1. #sdcore-dev channel in [Aether Community Slack](https://aether5g-project.slack.com)
